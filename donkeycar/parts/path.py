@@ -6,7 +6,7 @@ import numpy
 from PIL import Image, ImageDraw
 
 from donkeycar.parts.transform import PIDController
-from donkeycar.utils import norm_deg, dist, deg2rad, arr_to_img, is_number_type
+from donkeycar.utils import norm_deg, dist, deg2rad, arr_to_img, is_number_type, sign
 
 
 class AbstractPath:
@@ -455,4 +455,157 @@ class PID_Pilot(object):
         else:
             throttle = throttles[closest_pt_idx] * self.variable_speed_multiplier
         logging.info(f"CTE: {cte} steer: {steer} throttle: {throttle}")
+        return steer, throttle
+
+
+class PurePursuit_Pilot(object):
+
+    def __init__(
+            self,
+            throttle: float,
+            lookahead_distance: float,
+            Kd: float,
+            max_steer: float,
+            axle_dist: float,
+            reverse_steering: bool = False,
+            use_constant_throttle: bool = False,
+            min_throttle: float = None):
+        self.throttle = throttle
+        self.use_constant_throttle = use_constant_throttle
+        self.variable_speed_multiplier = 1.0
+        self.min_throttle = min_throttle if min_throttle is not None else throttle
+
+        # to use static lookahead, set Kd to 0
+        self.ld_base = lookahead_distance
+        self.Kd = Kd
+
+        # values that need to be measure from car
+        self.max_steer = max_steer*(math.pi/180)
+        self.L = axle_dist
+
+        self.reverse_steering = reverse_steering
+
+        self.last_pos_x = 0
+        self.last_pos_y = 0
+
+    def run(self, path: list, pos_x, pos_y, heading, throttles: list, closest_pt_idx: int, total_velocity:float) -> tuple:
+
+        ### CALCULATE STEERING ###
+
+        # adjust lookahead distance based on velocity
+        ld = self.ld_base + (self.Kd * total_velocity)
+
+        # find dist of closest point; if within ld, find intersections; else use closest point as goal point
+        goal_dist = dist(pos_x, pos_y, path[closest_pt_idx][0], path[closest_pt_idx][1])
+        if goal_dist < ld:
+
+            # check next point along path; keep moving until furthest point within ld is found
+            i = 0
+            line_found = False
+            while not line_found:
+                # calc distance for next point
+                i += 1
+                if dist(pos_x, pos_y, path[(closest_pt_idx + i) % len(path)][0], path[(closest_pt_idx + i) % len(path)][1]) > ld:
+                    # if dist exceeds lookahead distance, go back one point
+                    i -= 1
+                    line_found = True
+                # loop terminates if dist exceeds ld; keep last valid index
+            
+            # set line segment where goal point solution exists
+            a = path[(closest_pt_idx + i) % len(path)]
+            b = path[(closest_pt_idx + i + 1) % len(path)]
+            # calculate intersection solution
+            dx = (b[0] - pos_x) - (a[0] - pos_x)
+            dy = (b[1] - pos_y) - (a[1] - pos_y)
+            dr = math.sqrt(dx**2 + dy**2) + 1e-5
+            D = (a[0] - pos_x)*(b[1] - pos_y) - (b[0] - pos_x)*(a[1] - pos_y)
+            discrim = (ld**2) * (dr**2) - (D**2)
+
+            if discrim >= 0:
+                # calculate the solutions
+                sol_x1 = (D * dy + sign(dy) * dx * math.sqrt(discrim)) / dr**2
+                sol_x2 = (D * dy - sign(dy) * dx * math.sqrt(discrim)) / dr**2
+                sol_y1 = (- D * dx + abs(dy) * math.sqrt(discrim)) / dr**2
+                sol_y2 = (- D * dx - abs(dy) * math.sqrt(discrim)) / dr**2
+
+                # adjust offsets
+                sol_x1 += pos_x
+                sol_x2 += pos_x
+                sol_y1 += pos_y
+                sol_y2 += pos_y
+
+                # find distance between each solution and next point; use one with smallest dist (furthest along point)
+                dist_1 = dist(sol_x1, sol_y1, path[(closest_pt_idx + i + 1) % len(path)][0], path[(closest_pt_idx + i + 1) % len(path)][1])
+                dist_2 = dist(sol_x2, sol_y2, path[(closest_pt_idx + i + 1) % len(path)][0], path[(closest_pt_idx + i + 1) % len(path)][1])
+
+                # use solution with lower dist as goal point, but only if solution exists within bounds of line
+                if dist_1 < dist_2:
+                    goal_point = [sol_x1, sol_y1]
+                elif dist_2 < dist_1:
+                    goal_point = [sol_x2, sol_y2]
+                else:
+                    goal_point = path[closest_pt_idx]
+            else:
+                # no solution exists; default to closest point on path
+                goal_point = path[closest_pt_idx]
+
+        else:
+            # closest point is not within ld circle; use closest as goal point
+            goal_point = path[(closest_pt_idx + 1) % len(path)]
+
+        # find alpha, angle between current position and goal point
+        alpha = math.acos((goal_point[0] - pos_x) / (math.sqrt((goal_point[0] - pos_x)**2 + (goal_point[1] - pos_y)**2) + 1e-5))
+        # calculate alpha based on angle between last and current position
+        if (goal_point[1] - pos_y) > 0 and (goal_point[0] - pos_x) > 0:
+            # NE, 0 -> 90
+            alpha = abs(math.atan((goal_point[1] - pos_y) / (goal_point[0] - pos_x)))
+        elif (goal_point[0] - pos_x) < 0  and (goal_point[1] - pos_y) > 0:
+            # NW, 90 - 180
+            alpha = math.pi - abs(math.atan((goal_point[1] - pos_y) / (goal_point[0] - pos_x)))
+        elif (goal_point[0] - pos_x) < 0 and (goal_point[1] - pos_y) < 0:
+            # SW, 180 -> 270
+            alpha = abs(math.atan((goal_point[1] - pos_y) / (goal_point[0] - pos_x))) + math.pi
+        else:
+            # SE, 270 -> 360
+            alpha = (2*math.pi) - abs(math.atan((goal_point[1] - pos_y) / (goal_point[0] - pos_x)))
+        # lock to 0 -> 360 frame
+        alpha %= 2*math.pi
+
+        # calculate possible turns (clockwise or counterclockwise) to ensure shortest is taken
+        norm_turn = alpha - heading
+        adj_turn = ((2*math.pi) - abs(norm_turn)) * -sign(norm_turn)
+        if abs(norm_turn) < abs(adj_turn):
+            steer = norm_turn
+        else:
+            steer = adj_turn
+
+        # convert to proper steer based on curvature of route to goal point
+        steer = math.atan(2*self.L*math.sin(steer)/ld)
+        steer_raw = steer
+        # convert steering value to be on scale from -1 to 1
+        steer /= self.max_steer
+
+        # if steering is outstide min/max steering angle, limit it; track excess (how much want to turn, but can't)
+        excess = 0
+        if steer > 1:
+            excess = abs(steer_raw - self.max_steer)
+            steer = 1
+        elif steer < -1:
+            excess = abs(steer_raw - self.max_steer)
+            steer = -1
+        
+        # reverse steering if applicable
+        if self.reverse_steering:
+            steer *= -1
+
+        ### END STEERING CALCULATION
+        
+
+        if self.use_constant_throttle or throttles is None or closest_pt_idx is None:
+            throttle = self.throttle
+        elif throttles[closest_pt_idx] * self.variable_speed_multiplier < self.min_throttle:
+            throttle = self.min_throttle
+        else:
+            throttle = throttles[closest_pt_idx] * self.variable_speed_multiplier
+        logging.info(f"lookahead: {ld}, steer: {steer} throttle: {throttle}")
         return steer, throttle

@@ -647,13 +647,25 @@ PATH_MIN_DIST = 0.2                 # after travelling this distance (m), save a
 PATH_SEARCH_LENGTH = None           # number of points to search for closest point, None to search entire path
 PATH_LOOK_AHEAD = 1                 # number of points ahead of the closest point to include in cte track
 PATH_LOOK_BEHIND = 1                # number of points behind the closest point to include in cte track   
+
+#
+# GPS AUTOPILOT
+#
+AUTOPILOT_TYPE = 'PID'              # 'PID', 'PurePursuit', or 'Stanley'
+USE_CONSTANT_THROTTLE = False       # whether or not to use the constant throttle or variable throttle captured during path recording
+# PID-related
 PID_P = -0.5                        # proportional mult for PID path follower
 PID_I = 0.000                       # integral mult for PID path follower
 PID_D = -0.3                        # differential mult for PID path follower
 PID_THROTTLE = 0.50                 # constant throttle value during path following
-USE_CONSTANT_THROTTLE = False       # whether or not to use the constant throttle or variable throttle captured during path recording
 PID_D_DELTA = 0.25                  # amount the inc/dec function will change the D value
 PID_P_DELTA = 0.25                  # amount the inc/dec function will change the P value
+# PurePursuit-related
+PILOT_LOOKAHEAD_DISTANCE = 3        # radius (meters) of lookahead circle used to find path intersections and establish goal point
+PILOT_LOOKAHEAD_Kd = 0              # multiplied by current velocity to allow lookahead radius to change based on speed, if 0 then lookahead radius is static
+PILOT_MAX_STEER = 25                # maximum amount front wheels can turn in one direction (degrees)
+AXLE_DIST = 1                       # distance (meters) between front and back axles
+PILOT_REVERSE_STEERING = False      # set to True if pilot consistently turns away from path
 
 #
 # Assign path follow functions to buttons.

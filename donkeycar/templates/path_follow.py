@@ -285,10 +285,19 @@ def drive(cfg, use_joystick=False, camera_type='single'):
     cte = CTE(look_ahead=cfg.PATH_LOOK_AHEAD, look_behind=cfg.PATH_LOOK_BEHIND, num_pts=cfg.PATH_SEARCH_LENGTH)
     V.add(cte, inputs=['path', 'pos/x', 'pos/y', 'cte/closest_pt'], outputs=['cte/error', 'cte/closest_pt'], run_condition='run_pilot')
 
-    # This will use the cross track error and PID constants to try to steer back towards the path.
-    pid = PIDController(p=cfg.PID_P, i=cfg.PID_I, d=cfg.PID_D)
-    pilot = PID_Pilot(pid, cfg.PID_THROTTLE, cfg.USE_CONSTANT_THROTTLE, min_throttle=cfg.PID_THROTTLE)
-    V.add(pilot, inputs=['cte/error', 'throttles', 'cte/closest_pt'], outputs=['pilot/steering', 'pilot/throttle'], run_condition="run_pilot")
+    # add path follow pilot type
+    if cfg.AUTOPILOT_TYPE == 'PurePursuit':
+        # This will try to follow a point on the path that is a set lookahead distance away. If Kd is non-zero, this distance will scale with speed.
+        from donkeycar.parts.path import PurePursuit_Pilot
+        pilot = PurePursuit_Pilot(throttle=cfg.PID_THROTTLE, lookahead_distance=cfg.PILOT_LOOKAHEAD_DISTANCE, Kd=cfg.PILOT_LOOKAHEAD_Kd, max_steer=cfg.PILOT_MAX_STEER, axle_dist=cfg.AXLE_DIST, 
+                                reverse_steering=cfg.PILOT_REVERSE_STEERING, use_constant_throttle=cfg.USE_CONSTANT_THROTTLE, min_throttle=cfg.PID_THROTTLE)
+        V.add(pilot, inputs=['path', 'pos/x', 'pos/y', 'heading', 'throttles', 'cte/closest_pt', 'total_velocity'], outputs=['pilot/steering', 'pilot/throttle'], run_condition='run_pilot')
+
+    else:
+        # This will use the cross track error and PID constants to try to steer back towards the path.
+        pid = PIDController(p=cfg.PID_P, i=cfg.PID_I, d=cfg.PID_D)
+        pilot = PID_Pilot(pid, cfg.PID_THROTTLE, cfg.USE_CONSTANT_THROTTLE, min_throttle=cfg.PID_THROTTLE)
+        V.add(pilot, inputs=['cte/error', 'throttles', 'cte/closest_pt'], outputs=['pilot/steering', 'pilot/throttle'], run_condition="run_pilot")
 
     def dec_pid_d():
         pid.Kd -= cfg.PID_D_DELTA
