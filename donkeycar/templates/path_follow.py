@@ -59,6 +59,7 @@ import donkeycar as dk
 from donkeycar.parts.controller import JoystickController
 from donkeycar.parts.path import CsvThrottlePath, PathPlot, CTE, PID_Pilot, \
     PlotCircle, PImage, OriginOffset
+from donkeycar.parts.pos_estimator import PositionEstimator
 from donkeycar.parts.transform import PIDController
 from donkeycar.parts.kinematics import TwoWheelSteeringThrottle
 from donkeycar.templates.complete import add_odometry, add_camera, \
@@ -275,6 +276,10 @@ def drive(cfg, use_joystick=False, camera_type='single'):
 
     plot = PathPlot(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET)
     V.add(plot, inputs=['map/image', 'path'], outputs=['map/image'])
+
+    # Enables heading calculation and estimated position based on gps delta
+    position_est = PositionEstimator()
+    V.add(position_est, inputs=['imu/acl_x', 'imu/acl_y', 'imu/gyr_x', 'pos/x', 'pos/y'], outputs=['est_pos/x', 'est_pos/y', 'heading', 'abs/acl_x', 'abs/acl_y', 'total_velocity'])
 
     # This will use path and current position to output cross track error
     cte = CTE(look_ahead=cfg.PATH_LOOK_AHEAD, look_behind=cfg.PATH_LOOK_BEHIND, num_pts=cfg.PATH_SEARCH_LENGTH)
