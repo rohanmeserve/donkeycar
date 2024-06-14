@@ -427,9 +427,23 @@ class CTE(object):
             if cp.y > 0.0 :
                 sign = -1.0
             cte = err.mag() * sign            
+
+            track_heading = None
+            if (b[1] - a[1]) > 0 and (b[0] - a[0]) > 0:
+                # NE, 0 -> 90
+                track_heading = abs(math.atan((b[1] - a[1]) / (b[0] - a[0])))
+            elif (b[0] - a[0]) < 0  and (b[1] - a[1]) > 0:
+                # NW, 90 - 180
+                track_heading = math.pi - abs(math.atan((b[1] - a[1]) / (b[0] - a[0])))
+            elif (b[0] - a[0]) < 0 and (b[1] - a[1]) < 0:
+                # SW, 180 -> 270
+                track_heading = abs(math.atan((b[1] - a[1]) / (b[0] - a[0]))) + math.pi
+            else:
+                # SE, 270 -> 360
+                track_heading = (2*math.pi) - abs(math.atan((b[1] - a[1]) / (b[0] - a[0])))
         else:
             logging.info(f"no nearest point to ({x},{y}))")
-        return cte, i
+        return cte, i, track_heading
 
 
 class PID_Pilot(object):
@@ -608,4 +622,55 @@ class PurePursuit_Pilot(object):
         else:
             throttle = throttles[closest_pt_idx] * self.variable_speed_multiplier
         logging.info(f"lookahead: {ld}, steer: {steer} throttle: {throttle}")
+        return steer, throttle
+
+class StanleyPilot():
+    def __init__(self, throttle: float, Kd: float, max_steer: float, use_constant_throttle: bool = False, min_throttle: float = None):
+        
+        self.max_steer = max_steer*(math.pi/180)
+        self.Kd = Kd
+
+        self.throttle = throttle
+        self.use_constant_throttle = use_constant_throttle
+        self.variable_speed_multiplier = 1.0
+        self.min_throttle = min_throttle if min_throttle is not None else throttle
+        
+    def run(self, car_heading, track_heading, cte, speed): 
+        # find psi: heading error between car's current and track trajectory segment
+        # car_heading is received from part/input
+        # track_heading needs to be calculated inside of CTE; received from part-input
+        
+        psi = None
+        psi_norm = track_heading - car_heading
+        psi_adj = ((2*math.pi) - abs(psi_norm)) * -sign(psi_norm)
+
+        # compare total turn for normal and adjusted turns; take the shortest route
+        if abs(psi_norm) < abs(psi_adj):
+            psi = psi_norm
+        else:
+            psi = psi_adj
+        
+        # find cte/vel component of steering
+        # cte received from part/input
+        # heading received from part/input
+        
+        steer = psi + math.atan((self.Kd*cte)/(speed + 1e-5))
+        
+        # apply min/max steering angle restriction; track excess (how much want to turn, but can't)
+        excess = 0
+        if steer > self.max_steer:
+            excess = abs(steer - self.max_steer)
+            steer = self.max_steer
+        if steer < -self.max_steer:
+            excess = abs(steer - self.max_steer)
+            steer = -self.max_steer
+        
+        # return steer
+        if self.use_constant_throttle or throttles is None or closest_pt_idx is None:
+            throttle = self.throttle
+        elif throttles[closest_pt_idx] * self.variable_speed_multiplier < self.min_throttle:
+            throttle = self.min_throttle
+        else:
+            throttle = throttles[closest_pt_idx] * self.variable_speed_multiplier
+        logging.info(f"cte: {ld}, heading_error: {psi}, steer: {steer} throttle: {throttle}")
         return steer, throttle

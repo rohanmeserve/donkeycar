@@ -666,6 +666,8 @@ PILOT_LOOKAHEAD_Kd = 0              # multiplied by current velocity to allow lo
 PILOT_MAX_STEER = 25                # maximum amount front wheels can turn in one direction (degrees)
 AXLE_DIST = 1                       # distance (meters) between front and back axles
 PILOT_REVERSE_STEERING = False      # set to True if pilot consistently turns away from path
+# Stanley-related
+STANLEY_Kd = .5                     # proportional mult for cte in Stanley path follower
 
 #
 # Assign path follow functions to buttons.
