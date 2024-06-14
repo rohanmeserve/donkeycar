@@ -637,6 +637,13 @@ GPS_NMEA_PATH = None        # File used to record gps, like "nmea.csv".
 GPS_DEBUG = False  # set to True to log UTM position (beware; lots of logging!)
 
 #
+# Extended Kalman Filter for improving position update frequency
+#
+USE_IMU_EKF = False         # enables the EKF; if you want the pilot to use its estimated positions, change output to 'est_pos/x' to 'pos/x'
+GPS_STD_DEV = 1             # standard deviation of GPS
+ACCEL_STD_DEV = .1          # standard deviation of acclerometer (either for x or y axes, or average between both)
+
+#
 # PATH FOLLOWING
 #
 PATH_FILENAME = "donkey_path.csv"   # the path will be saved to this filename as comma separated x,y values

@@ -281,6 +281,12 @@ def drive(cfg, use_joystick=False, camera_type='single'):
     position_est = PositionEstimator()
     V.add(position_est, inputs=['imu/acl_x', 'imu/acl_y', 'imu/gyr_x', 'pos/x', 'pos/y'], outputs=['est_pos/x', 'est_pos/y', 'heading', 'abs/acl_x', 'abs/acl_y', 'total_velocity'])
 
+    # Alternative estimated positions
+    if cfg.USE_IMU_EKF:
+        from donkeycar.parts.pos_estimator import GPS_IMU_EKF
+        ekf = GPS_IMU_EKF(cfg.GPS_STD_DEV, cfg.ACCEL_STD_DEV)
+        V.add(ekf, inputs=['pos/x', 'pos/y', 'abs/acl_x', 'abs/acl_y', 'gps/hdop'], outputs=['est_pos/x', 'est_pos/y', 'heading'])
+
     # This will use path and current position to output cross track error
     cte = CTE(look_ahead=cfg.PATH_LOOK_AHEAD, look_behind=cfg.PATH_LOOK_BEHIND, num_pts=cfg.PATH_SEARCH_LENGTH)
     V.add(cte, inputs=['path', 'pos/x', 'pos/y', 'cte/closest_pt'], outputs=['cte/error', 'cte/closest_pt'], run_condition='run_pilot')
@@ -476,7 +482,7 @@ def add_gps(V, cfg):
         gps_positions = GpsNmeaPositions(debug=cfg.GPS_DEBUG)
         V.add(gps_positions, inputs=['gps/nmea'], outputs=['gps/positions'])
         gps_latest_position = GpsLatestPosition(debug=cfg.GPS_DEBUG)
-        V.add(gps_latest_position, inputs=['gps/positions'], outputs=['gps/timestamp', 'gps/utm/longitude', 'gps/utm/latitude'])
+        V.add(gps_latest_position, inputs=['gps/positions'], outputs=['gps/timestamp', 'gps/utm/longitude', 'gps/utm/latitude', 'gps/hdop'])
 
         # rename gps utm position to pose values
         V.add(Pipe(), inputs=['gps/utm/longitude', 'gps/utm/latitude'], outputs=['pos/x', 'pos/y'])
